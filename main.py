@@ -1,0 +1,48 @@
+import asyncio
+
+from embedder import Embedder
+from memory_store import MemoryStore
+from orchestrator import Orchestrator
+from tools_registry import TOOLS, llm
+
+
+def main():
+    # Skip sentence-transformers load (torch + HF model) — mock run uses Jaccard fallback.
+    store = MemoryStore(embedder=Embedder(enabled=False))
+    store.add(
+        "Previously built a 2-city comparison; forgot to include timezone. "
+        "Reminder: always verify every requested attribute is present.",
+        kind="episodic",
+    )
+    store.add("The Eiffel Tower is in Paris and is 330 meters tall.", kind="semantic")
+    store.add(
+        "Tokyo's Shibuya crossing is one of the busiest intersections in the world.",
+        kind="semantic",
+    )
+
+    orch = Orchestrator(provider=llm, tools=TOOLS, memory=store)
+
+    GOAL = (
+        "Build a comparison report of Paris, Tokyo, and New York covering "
+        "population, timezone, and a narrative summary for each."
+    )
+    REQUIRED = ["paris", "tokyo", "new york"]
+
+    result = asyncio.run(orch.run(GOAL, REQUIRED))
+
+    print(f"Status:        {result.status}")
+    print(
+        f"Verdict:       passed={result.verdict.passed if result.verdict else 'n/a'}  "
+        f"tier={result.verdict.tier if result.verdict else 'n/a'}"
+    )
+    print(f"Tokens used:   {result.budget.tokens_used}")
+    print(f"Tool calls:    {result.budget.tool_calls_used}")
+    print(f"Cost (est):    ${result.budget.cost_eur:.4f}")
+    print(f"Budget pressure final: {result.budget.pressure():.2f}")
+    print()
+    print("--- REPORT ---")
+    print(result.report)
+
+
+if __name__ == "__main__":
+    main()
