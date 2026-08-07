@@ -53,7 +53,7 @@ class OpenAICompatibleProvider(LLMProvider):
         return _extract_json_text(raw) if role in STRUCTURED_ROLES else raw
 
 
-def safe_json_loads(raw: str) -> dict:
+def safe_json_loads(raw: str) -> Any:
     """Tolerant JSON parse: strips code fences / prose, raises ValueError on failure."""
     try:
         return json.loads(raw)

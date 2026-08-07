@@ -1,3 +1,4 @@
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -13,6 +14,9 @@ DEFAULT_SYSTEM_PROMPT = """You are a coding agent. Reply with ONLY one JSON obje
 - {"tool": "write_file", "args": {"path": "...", "content": "..."}}
 - {"tool": "edit_file", "args": {"path": "...", "old_string": "...", "new_string": "..."}}
 - {"done": true, "summary": "..."}
+
+To finish, you MUST use {"done": true, "summary": "..."}.
+Never use {"tool": "done", ...} — done is not a tool.
 """
 
 OnStep = Callable[[dict[str, Any]], None]
@@ -28,6 +32,28 @@ def _truncate_args(args: dict) -> dict:
         if isinstance(val, str) and len(val) > _CONTENT_PREVIEW:
             out[key] = val[:_CONTENT_PREVIEW] + "…"
     return out
+
+
+def _ms_since(t0: float) -> int:
+    return int((time.monotonic() - t0) * 1000)
+
+
+def done_summary(action: Any) -> str | None:
+    """Return summary if action is a finish signal, else None.
+
+    Accepts both {"done": true, "summary": "..."} and the common misfire
+    {"tool": "done", "summary": "..."} / {"tool": "done", "args": {"summary": "..."}}.
+    """
+    if not isinstance(action, dict):
+        return None
+    if action.get("done") is True or action.get("done") == "true":
+        return action.get("summary") or "done"
+    if action.get("tool") == "done":
+        args = action.get("args") or {}
+        if not isinstance(args, dict):
+            args = {}
+        return action.get("summary") or args.get("summary") or "done"
+    return None
 
 
 class Agent:
@@ -51,17 +77,33 @@ class Agent:
     ) -> str:
         messages: list[dict] = [{"role": "user", "content": goal}]
         for step in range(max_steps):
+            t_llm = time.monotonic()
             raw = self._provider.chat(
                 system=self._system_prompt, messages=messages, role="agent"
             )
+            llm_ms = _ms_since(t_llm)
             if on_step:
-                on_step({"kind": "llm", "raw": raw[:_OBS_LIMIT], "step": step})
+                on_step(
+                    {
+                        "kind": "llm",
+                        "raw": raw[:_OBS_LIMIT],
+                        "step": step,
+                        "latency_ms": llm_ms,
+                    }
+                )
             messages.append({"role": "assistant", "content": raw})
             try:
                 action = safe_json_loads(raw)
             except ValueError as e:
                 if on_step:
-                    on_step({"kind": "invalid_json", "error": str(e), "step": step})
+                    on_step(
+                        {
+                            "kind": "invalid_json",
+                            "error": str(e),
+                            "step": step,
+                            "latency_ms": 0,
+                        }
+                    )
                 messages.append(
                     {
                         "role": "user",
@@ -69,13 +111,43 @@ class Agent:
                     }
                 )
                 continue
-            if action.get("done"):
-                summary = action.get("summary") or "done"
+            if not isinstance(action, dict):
+                err = (
+                    f"Expected a JSON object, got {type(action).__name__}: "
+                    f"{raw[:200]!r}"
+                )
                 if on_step:
-                    on_step({"kind": "done", "summary": summary, "step": step})
+                    on_step(
+                        {
+                            "kind": "invalid_json",
+                            "error": err,
+                            "step": step,
+                            "latency_ms": 0,
+                        }
+                    )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"{err}. Reply with one JSON object.",
+                    }
+                )
+                continue
+            if (summary := done_summary(action)) is not None:
+                if on_step:
+                    on_step(
+                        {
+                            "kind": "done",
+                            "summary": summary,
+                            "step": step,
+                            "latency_ms": 0,
+                        }
+                    )
                 return summary
             name = action.get("tool")
             args = action.get("args") or {}
+            if not isinstance(args, dict):
+                args = {}
+            t_tool = time.monotonic()
             if name not in self._tools:
                 obs = f"Unknown tool: {name!r}"
             else:
@@ -83,6 +155,7 @@ class Agent:
                     obs = str(self._tools[name].run(args))
                 except Exception as e:  # noqa: BLE001
                     obs = f"Tool error: {e}"
+            tool_ms = _ms_since(t_tool)
             if on_step:
                 on_step(
                     {
@@ -91,6 +164,7 @@ class Agent:
                         "args": _truncate_args(args),
                         "observation": obs[:_OBS_LIMIT],
                         "step": step,
+                        "latency_ms": tool_ms,
                     }
                 )
             messages.append({"role": "user", "content": f"Observation:\n{obs}"})

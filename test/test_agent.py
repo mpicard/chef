@@ -143,6 +143,11 @@ def test_agent_on_step_tool_then_done(tmp_path):
 
     assert events[3]["summary"] == "wrote x.txt"
     assert events[3]["step"] == 1
+    assert isinstance(events[0]["latency_ms"], int)
+    assert events[0]["latency_ms"] >= 0
+    assert isinstance(events[1]["latency_ms"], int)
+    assert events[1]["latency_ms"] >= 0
+    assert events[3]["latency_ms"] == 0
 
 
 def test_agent_on_step_invalid_json():
@@ -158,3 +163,52 @@ def test_agent_on_step_invalid_json():
     kinds = [e["kind"] for e in events]
     assert kinds == ["llm", "invalid_json", "llm", "done"]
     assert "error" in events[1]
+    assert events[1]["latency_ms"] == 0
+
+
+def test_agent_accepts_tool_done_misfire():
+    events: list[dict] = []
+    provider = ScriptedProvider(
+        [
+            json.dumps(
+                {"tool": "done", "summary": "finished via tool done"}
+            ),
+        ]
+    )
+    agent = Agent(provider, tools={})
+    assert agent.run("g", on_step=events.append) == "finished via tool done"
+    assert [e["kind"] for e in events] == ["llm", "done"]
+
+
+def test_agent_accepts_tool_done_summary_in_args():
+    provider = ScriptedProvider(
+        [json.dumps({"tool": "done", "args": {"summary": "via args"}})]
+    )
+    agent = Agent(provider, tools={})
+    assert agent.run("g") == "via args"
+
+
+def test_done_summary_helper():
+    from agent import done_summary
+
+    assert done_summary({"done": True, "summary": "a"}) == "a"
+    assert done_summary({"tool": "done", "summary": "b"}) == "b"
+    assert done_summary({"tool": "done", "args": {"summary": "c"}}) == "c"
+    assert done_summary({"tool": "read_file", "args": {"path": "x"}}) is None
+    assert done_summary([2608038142.43914]) is None
+    assert done_summary("nope") is None
+
+
+def test_agent_rejects_json_array_then_recovers():
+    events: list[dict] = []
+    provider = ScriptedProvider(
+        [
+            "[2608038142.43914]",
+            json.dumps({"done": True, "summary": "recovered"}),
+        ]
+    )
+    agent = Agent(provider, tools={})
+    assert agent.run("g", on_step=events.append) == "recovered"
+    assert events[1]["kind"] == "invalid_json"
+    assert "Expected a JSON object" in events[1]["error"]
+    assert "JSON object" in provider.calls[1]["messages"][-1]["content"]
