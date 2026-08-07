@@ -6,17 +6,21 @@ Educational project for learning how agentic coding works.
 
 Two-node hybrid:
 
-1. **Plan** — ReAct loop with `read_file` only; produces an implementation plan
-2. **Build** — ReAct loop with `read_file` + `write_file`; implements the plan
+1. **Plan** — ReAct loop with `read_file` / `list_dir` / `glob`; produces a plan
+2. **Build** — ReAct loop with those plus `write_file` / `edit_file`; implements the plan
 
-Entry point: `main.py` → `Orchestrator` → `Agent`.
+Entry: `cli` / `main.py` → `Orchestrator` → `Agent`.
 
 ## Run
 
 ```bash
 uv sync --group dev
-python main.py
+uv run chef "Create sandbox/hello.py that prints Hello, chef"
+# or
+uv run python main.py "your goal" --plan-steps 8 --quiet
 ```
+
+Flags: `--plan-steps N`, `--build-steps N`, `-q` / `--quiet`.
 
 ## Test
 
