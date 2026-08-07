@@ -17,6 +17,8 @@ Reply with ONLY one JSON object per turn:
 - {"done": true, "summary": "<concrete implementation plan>"}
 
 When done, summary must list which files to create/edit and what to put in them.
+To finish, you MUST use {"done": true, "summary": "..."}.
+Never use {"tool": "done", ...} — done is not a tool.
 """
 
 BUILD_SYSTEM_PROMPT = """You are a coding agent that implements a plan.
@@ -30,6 +32,9 @@ Reply with ONLY one JSON object per turn:
 - {"tool": "write_file", "args": {"path": "...", "content": "..."}}
 - {"tool": "edit_file", "args": {"path": "...", "old_string": "...", "new_string": "..."}}
 - {"done": true, "summary": "<what you changed>"}
+
+To finish, you MUST use {"done": true, "summary": "..."}.
+Never use {"tool": "done", ...} — done is not a tool.
 """
 
 
@@ -46,7 +51,9 @@ def format_step(event: dict[str, Any]) -> str:
     phase = event.get("phase", "?")
     step = event.get("step", "?")
     kind = event.get("kind", "?")
-    prefix = f"[{phase} {step}] {kind}"
+    ms = event.get("latency_ms")
+    timing = f" {ms}ms" if ms is not None else ""
+    prefix = f"[{phase} {step}] {kind}{timing}"
     if kind == "tool":
         args = event.get("args") or {}
         detail = " ".join(f"{k}={v!r}" for k, v in args.items())

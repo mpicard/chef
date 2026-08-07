@@ -131,7 +131,8 @@ def test_format_step_tool():
             "kind": "tool",
             "tool": "write_file",
             "args": {"path": "a.py", "content": "x"},
+            "latency_ms": 12,
         }
     )
-    assert line.startswith("[build 0] tool write_file")
+    assert line.startswith("[build 0] tool 12ms write_file")
     assert "path='a.py'" in line
