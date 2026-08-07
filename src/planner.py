@@ -324,14 +324,25 @@ class PlanDAG:
         if isinstance(data, list):
             if len(data) == 1 and isinstance(data[0], dict) and "nodes" in data[0]:
                 data = data[0]
-            else:
+            elif data and all(isinstance(n, dict) and "id" in n for n in data):
                 data = {"nodes": data}
+            else:
+                raise ValueError(
+                    f"Plan JSON must be an object with 'nodes', got {data!r}"
+                )
+        if not isinstance(data, dict) or "nodes" not in data:
+            raise ValueError(f"Plan JSON missing 'nodes': {data!r}")
+        if not isinstance(data["nodes"], list) or not all(
+            isinstance(n, dict) and "id" in n and "tool" in n for n in data["nodes"]
+        ):
+            raise ValueError(f"Plan 'nodes' must be a list of node objects: {data!r}")
+
         dag = cls()
         for n in data["nodes"]:
             dag.nodes[n["id"]] = PlanNode(
                 id=n["id"],
                 tool=n["tool"],
-                args=n["args"],
+                args=n.get("args", {}),
                 deps=n.get("deps", []),
             )
         dag.validate()

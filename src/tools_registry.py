@@ -42,11 +42,31 @@ def summarise_city(city: str) -> str:
     return data.get("summary", f"{city.title()} is a notable city.")
 
 
-def aggregate_report(cities: list[str]) -> str:
-    # Also an LLM-backed tool; the aggregator composes the final report.
-    payload = {c: CITY_FACTS.get(c.lower(), {}) for c in cities}
+def aggregate_report(cities: list[str], gathered: dict[str, Any] | None = None) -> str:
+    payload: dict[str, Any] = {
+        c: dict(CITY_FACTS.get(c.lower(), {})) for c in cities
+    }
+    for item in (gathered or {}).values():
+        tool = item.get("tool")
+        args = item.get("args") or {}
+        result = item.get("result")
+        city = args.get("city")
+        if not city:
+            continue
+        bucket = payload.setdefault(city, {})
+        if tool == "get_population":
+            bucket["population"] = result
+        elif tool == "get_timezone":
+            bucket["timezone"] = result
+        elif tool == "summarize_city":
+            bucket["summary"] = result
+
     raw = llm.complete(
-        system='Compose a markdown report. Return JSON: {"report": "..."}',
+        system=(
+            "Compose a markdown comparison report. For EACH city you MUST include "
+            "population, timezone, and the narrative summary from the gathered facts. "
+            'Return JSON: {"report": "..."}'
+        ),
         user=f"Facts: {json.dumps(payload)}",
         role="aggregator",
     )

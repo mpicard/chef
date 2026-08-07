@@ -1,4 +1,19 @@
 import asyncio
+import os
+import sys
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent
+_SRC = _ROOT / "src"
+_VENV_PY = _ROOT / ".venv" / "bin" / "python"
+
+# Prefer the project venv: a bare `python3` on PATH is often Homebrew and
+# won't see the editable install that maps `src/` onto imports.
+if _VENV_PY.exists() and Path(sys.executable).resolve() != _VENV_PY.resolve():
+    os.execv(str(_VENV_PY), [str(_VENV_PY), str(Path(__file__).resolve()), *sys.argv[1:]])
+
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
 from llm import llm
 from memory_store import MemoryStore

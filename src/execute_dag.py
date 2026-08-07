@@ -26,7 +26,17 @@ async def execute_dag(
             t0 = time.monotonic()
             try:
                 tool = tools[node.tool]
-                node.result = await asyncio.to_thread(tool.run, node.args)
+                gathered = {
+                    d: {
+                        "tool": dag.nodes[d].tool,
+                        "args": dag.nodes[d].args,
+                        "result": dag.nodes[d].result,
+                    }
+                    for d in node.deps
+                }
+                node.result = await asyncio.to_thread(
+                    tool.run, node.args, gathered=gathered
+                )
                 node.status = NodeStatus.DONE
             except Exception as exc:  # noqa: BLE001
                 node.error = f"{type(exc).__name__}: {exc}"
