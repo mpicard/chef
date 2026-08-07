@@ -2,44 +2,46 @@ import asyncio
 import json
 import re
 
+from typing import Any
+
 from openai import OpenAI
+
+STRUCTURED_ROLES = frozenset({"agent"})
 
 
 class LLMProvider:
-    """Shared interface. Subclass to plug in a different backend"""
+    """Shared interface. Subclass to plug in a different backend."""
 
-    def complete(self, system: str, user: str, role: str = "default") -> str:
+    def chat(self, system: str, messages: list[dict], role: str = "default") -> str:
         raise NotImplementedError
 
+    def complete(self, system: str, user: str, role: str = "default") -> str:
+        return self.chat(
+            system, [{"role": "user", "content": user}], role=role
+        )
+
     async def acomplete(self, system: str, user: str, role: str = "default") -> str:
-        # Wrap sync call in a thread; works for any SDK
         return await asyncio.to_thread(self.complete, system, user, role)
 
 
 class OpenAICompatibleProvider(LLMProvider):
     def __init__(
-        self, model: str, base_url: str = "http://127.0.0.1:11434/v1", api_key: str = ""
+        self,
+        model: str,
+        base_url: str = "http://127.0.0.1:11434/v1",
+        api_key: str = "",
+        client: Any | None = None,
     ):
-        self._client = OpenAI(base_url=base_url, api_key=api_key)
+        self._client = client or OpenAI(base_url=base_url, api_key=api_key)
         self._model = model
 
-    def complete(self, system: str, user: str, role: str = "default") -> str:
-        structured_roles = {
-            "planner",
-            "replanner",
-            "summarizer",
-            "aggregator",
-            "critic",
-        }
+    def chat(self, system: str, messages: list[dict], role: str = "default") -> str:
         system_prompt = system
         kwargs: dict = {
             "model": self._model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user},
-            ],
+            "messages": [{"role": "system", "content": system_prompt}, *messages],
         }
-        if role in structured_roles:
+        if role in STRUCTURED_ROLES:
             system_prompt = (
                 system + "\n\nRespond with ONLY a single JSON value. "
                 "No prose, no markdown fences, no commentary."
@@ -48,7 +50,7 @@ class OpenAICompatibleProvider(LLMProvider):
             kwargs["response_format"] = {"type": "json_object"}
         res = self._client.chat.completions.create(**kwargs)
         raw = res.choices[0].message.content or ""
-        return _extract_json_text(raw) if role in structured_roles else raw
+        return _extract_json_text(raw) if role in STRUCTURED_ROLES else raw
 
 
 def safe_json_loads(raw: str) -> dict:
@@ -74,15 +76,12 @@ def _extract_json_text(text: str) -> str:
     if not text:
         return ""
     s = text.strip()
-    # Strip markdown code fences if present
     fence = re.match(
         r"^```(?:json)?\s*(.*?)\s*```$", s, flags=re.DOTALL | re.IGNORECASE
     )
     if fence:
         s = fence.group(1).strip()
-    # If it already looks like JSON, return as-is
     if s.startswith(("{", "[")):
         return s
-    # Otherwise pull out the first {...} or [...] block
     m = re.search(r"(\{.*\}|\[.*\])", s, flags=re.DOTALL)
     return m.group(1).strip() if m else s

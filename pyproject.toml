@@ -5,8 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "openai>=2.53.0",
     "pydantic>=2.13.4",
-    "sentence-transformers>=5.6.1",
+    "python-dotenv>=1.2.2",
 ]
 
 [build-system]
