@@ -63,6 +63,16 @@ def test_orchestrator_plan_cannot_write(tmp_path):
                     "args": {"path": "evil.py", "content": "x"},
                 }
             ),
+            json.dumps(
+                {
+                    "tool": "edit_file",
+                    "args": {
+                        "path": "evil.py",
+                        "old_string": "a",
+                        "new_string": "b",
+                    },
+                }
+            ),
             json.dumps({"done": True, "summary": "plan without writes"}),
             json.dumps({"done": True, "summary": "build noop"}),
         ]
@@ -73,6 +83,7 @@ def test_orchestrator_plan_cannot_write(tmp_path):
 
     assert not (tmp_path / "evil.py").exists()
     assert "Unknown tool" in provider.calls[1]["messages"][-1]["content"]
+    assert "Unknown tool" in provider.calls[2]["messages"][-1]["content"]
     assert result.plan == "plan without writes"
     assert result.report == "build noop"
 

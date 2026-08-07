@@ -8,7 +8,10 @@ from typed_tool import TypedTool
 DEFAULT_SYSTEM_PROMPT = """You are a coding agent. Reply with ONLY one JSON object per turn:
 
 - {"tool": "read_file", "args": {"path": "..."}}
+- {"tool": "list_dir", "args": {"path": "."}}
+- {"tool": "glob", "args": {"pattern": "**/*.py"}}
 - {"tool": "write_file", "args": {"path": "...", "content": "..."}}
+- {"tool": "edit_file", "args": {"path": "...", "old_string": "...", "new_string": "..."}}
 - {"done": true, "summary": "..."}
 """
 
@@ -20,9 +23,10 @@ _CONTENT_PREVIEW = 80
 
 def _truncate_args(args: dict) -> dict:
     out = dict(args)
-    content = out.get("content")
-    if isinstance(content, str) and len(content) > _CONTENT_PREVIEW:
-        out["content"] = content[:_CONTENT_PREVIEW] + "…"
+    for key in ("content", "old_string", "new_string"):
+        val = out.get(key)
+        if isinstance(val, str) and len(val) > _CONTENT_PREVIEW:
+            out[key] = val[:_CONTENT_PREVIEW] + "…"
     return out
 
 

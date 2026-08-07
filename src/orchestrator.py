@@ -4,23 +4,31 @@ from typing import Any
 
 from agent import Agent, OnStep
 from llm_provider import LLMProvider
+from tools_registry import PLAN_TOOLS
 from typed_tool import TypedTool
 
 PLAN_SYSTEM_PROMPT = """You are a planning agent for a coding task.
-You may ONLY use read_file to inspect the repo. You cannot write files.
+You may ONLY use read_file, list_dir, and glob to inspect the repo. You cannot write or edit files.
 Reply with ONLY one JSON object per turn:
 
 - {"tool": "read_file", "args": {"path": "..."}}
+- {"tool": "list_dir", "args": {"path": "."}}
+- {"tool": "glob", "args": {"pattern": "**/*.py"}}
 - {"done": true, "summary": "<concrete implementation plan>"}
 
 When done, summary must list which files to create/edit and what to put in them.
 """
 
 BUILD_SYSTEM_PROMPT = """You are a coding agent that implements a plan.
-You may use read_file and write_file. Reply with ONLY one JSON object per turn:
+You may use read_file, list_dir, glob, write_file, and edit_file.
+Prefer edit_file for small changes to existing files; write_file for new files or full rewrites.
+Reply with ONLY one JSON object per turn:
 
 - {"tool": "read_file", "args": {"path": "..."}}
+- {"tool": "list_dir", "args": {"path": "."}}
+- {"tool": "glob", "args": {"pattern": "**/*.py"}}
 - {"tool": "write_file", "args": {"path": "...", "content": "..."}}
+- {"tool": "edit_file", "args": {"path": "...", "old_string": "...", "new_string": "..."}}
 - {"done": true, "summary": "<what you changed>"}
 """
 
@@ -89,7 +97,7 @@ class Orchestrator:
         plan_tools = {
             name: tool
             for name, tool in self._tools.items()
-            if name == "read_file"
+            if name in PLAN_TOOLS
         }
         plan_agent = Agent(
             self._provider,
