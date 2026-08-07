@@ -10,14 +10,14 @@ def test_integration_build_context():
     store.add("Paris is the capital of France", kind="semantic")
     store.add("Berlin timezone is Europe/Berlin", kind="semantic")
     working = WorkingMemory(
-        goal="summarise Paris",
-        plan_summary="get_population -> summarise_city",
+        goal="summarize Paris",
+        plan_summary="get_population -> summarize_city",
     )
     working.add_result("population=12000000")
     assert (
         build_context(working, store, budget_chars=500)
-        == """Goal: summarise Paris
-Plan: get_population -> summarise_city
+        == """Goal: summarize Paris
+Plan: get_population -> summarize_city
 Recent:
 - population=12000000
 [episodic] Queried Paris population; tool return 1M

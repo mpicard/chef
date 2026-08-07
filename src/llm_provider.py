@@ -28,7 +28,6 @@ class OpenAICompatibleProvider(LLMProvider):
             "planner",
             "replanner",
             "summarizer",
-            "summariser",
             "aggregator",
             "critic",
         }

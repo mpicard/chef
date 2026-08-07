@@ -32,9 +32,9 @@ def get_timezone(city: str) -> str:
     return _fact(city, "timezone")
 
 
-def summarise_city(city: str) -> str:
+def summarize_city(city: str) -> str:
     raw = llm.complete(
-        system='You summarise a city in one sentence. Return JSON: {"summary": "..."}',
+        system='You summarize a city in one sentence. Return JSON: {"summary": "..."}',
         user=f"City: {city}",
         role="summarizer",
     )
@@ -93,7 +93,7 @@ TOOLS: dict[str, TypedTool] = {
         name="summarize_city",
         description="Produce a one-sentence narrative summary of a city.",
         args_model=CityArgs,
-        fn=summarise_city,
+        fn=summarize_city,
         cost_hint=1.0,  # LLM call → costlier
     ),
     "aggregate_report": TypedTool(

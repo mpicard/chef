@@ -7,7 +7,7 @@ def test_record_appends_flat_event():
     tr = Tracer()
     e = tr.record(
         role="worker",
-        action="summarise_city",
+        action="summarize_city",
         parent_id="plan-1",
         latency_ms=120.0,
         tokens=400,

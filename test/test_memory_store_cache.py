@@ -26,11 +26,11 @@ def test_retrieve_encodes_goal_once_across_kinds():
     ]
     mock.calls.clear()  # ignore seeding encodes
 
-    store.retrieve("summarise Paris", k=3, kind="episodic")
-    store.retrieve("summarise Paris", k=3, kind="semantic")
+    store.retrieve("summarize Paris", k=3, kind="episodic")
+    store.retrieve("summarize Paris", k=3, kind="semantic")
 
-    assert mock.calls == ["summarise Paris"]
-    assert "summarise Paris" in store._cache
+    assert mock.calls == ["summarize Paris"]
+    assert "summarize Paris" in store._cache
 
 
 def test_retrieve_does_not_reencode_per_candidate():

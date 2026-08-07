@@ -6,7 +6,7 @@ from tools_registry import (
     aggregate_report,
     get_population,
     get_timezone,
-    summarise_city,
+    summarize_city,
 )
 from typed_tool import TypedTool
 
@@ -30,11 +30,11 @@ class GetTimezone(TypedTool):
 
 
 @dataclass
-class SummariseCity(TypedTool):
-    name = "summarise_city"
-    description = "Summarise a city with LLM"
+class SummarizeCity(TypedTool):
+    name = "summarize_city"
+    description = "Summarize a city with LLM"
     args_model = CityArgs
-    fn = summarise_city
+    fn = summarize_city
     cost_hint = 1.0
 
 
