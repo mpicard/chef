@@ -111,3 +111,50 @@ def test_agent_max_steps():
     agent = Agent(provider, tools={})
     assert agent.run("loop", max_steps=2) == "Stopped: max_steps reached"
     assert len(provider.calls) == 2
+
+
+def test_agent_on_step_tool_then_done(tmp_path):
+    tools = make_tools(root=tmp_path)
+    events: list[dict] = []
+    provider = ScriptedProvider(
+        [
+            json.dumps(
+                {
+                    "tool": "write_file",
+                    "args": {"path": "x.txt", "content": "hi" + ("!" * 100)},
+                }
+            ),
+            json.dumps({"done": True, "summary": "wrote x.txt"}),
+        ]
+    )
+    agent = Agent(provider, tools=tools)
+    assert agent.run("write x", on_step=events.append) == "wrote x.txt"
+
+    kinds = [e["kind"] for e in events]
+    assert kinds == ["llm", "tool", "llm", "done"]
+
+    tool_ev = events[1]
+    assert tool_ev["tool"] == "write_file"
+    assert tool_ev["step"] == 0
+    assert tool_ev["args"]["path"] == "x.txt"
+    assert tool_ev["args"]["content"].endswith("…")
+    assert len(tool_ev["args"]["content"]) <= 81
+    assert "Wrote" in tool_ev["observation"]
+
+    assert events[3]["summary"] == "wrote x.txt"
+    assert events[3]["step"] == 1
+
+
+def test_agent_on_step_invalid_json():
+    events: list[dict] = []
+    provider = ScriptedProvider(
+        [
+            "not json {{{",
+            json.dumps({"done": True, "summary": "ok"}),
+        ]
+    )
+    agent = Agent(provider, tools={})
+    assert agent.run("g", on_step=events.append) == "ok"
+    kinds = [e["kind"] for e in events]
+    assert kinds == ["llm", "invalid_json", "llm", "done"]
+    assert "error" in events[1]
