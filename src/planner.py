@@ -319,7 +319,13 @@ class PlanDAG:
         plt.close(fig)
 
     @classmethod
-    def from_json(cls, data: dict) -> "PlanDAG":
+    def from_json(cls, data: dict | list) -> "PlanDAG":
+        # Some models wrap the plan object in a one-element list.
+        if isinstance(data, list):
+            if len(data) == 1 and isinstance(data[0], dict) and "nodes" in data[0]:
+                data = data[0]
+            else:
+                data = {"nodes": data}
         dag = cls()
         for n in data["nodes"]:
             dag.nodes[n["id"]] = PlanNode(

@@ -1,14 +1,13 @@
 import asyncio
 
-from embedder import Embedder
+from llm import llm
 from memory_store import MemoryStore
 from orchestrator import Orchestrator
-from tools_registry import TOOLS, llm
+from tools_registry import TOOLS
 
 
 def main():
-    # Skip sentence-transformers load (torch + HF model) — mock run uses Jaccard fallback.
-    store = MemoryStore(embedder=Embedder(enabled=False))
+    store = MemoryStore()
     store.add(
         "Previously built a 2-city comparison; forgot to include timezone. "
         "Reminder: always verify every requested attribute is present.",

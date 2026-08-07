@@ -3,12 +3,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from helpers import safe_json_loads
-from mock_provider import CITY_FACTS, MockProvider
+from llm import llm
+from llm_provider import safe_json_loads
+from mock_provider import CITY_FACTS
 from typed_tool import TypedTool
-
-# TODO backends
-llm = MockProvider()
 
 
 class CityArgs(BaseModel):

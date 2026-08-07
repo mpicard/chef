@@ -1,16 +1,69 @@
 import asyncio
+import json
 import re
+
+from openai import OpenAI
 
 
 class LLMProvider:
     """Shared interface. Subclass to plug in a different backend"""
 
-    def complete(self, system: str, user: str, role: str = "defaalt") -> str:
+    def complete(self, system: str, user: str, role: str = "default") -> str:
         raise NotImplementedError
 
-    async def acomplete(self, system: str, user: str, role: str = "defaalt") -> str:
+    async def acomplete(self, system: str, user: str, role: str = "default") -> str:
         # Wrap sync call in a thread; works for any SDK
         return await asyncio.to_thread(self.complete, system, user, role)
+
+
+class OpenAICompatibleProvider(LLMProvider):
+    def __init__(
+        self, model: str, base_url: str = "http://127.0.0.1:11434/v1", api_key: str = ""
+    ):
+        self._client = OpenAI(base_url=base_url, api_key=api_key)
+        self._model = model
+
+    def complete(self, system: str, user: str, role: str = "default") -> str:
+        structured_roles = {
+            "planner",
+            "replanner",
+            "summarizer",
+            "summariser",
+            "aggregator",
+            "critic",
+        }
+        system_prompt = system
+        kwargs: dict = {
+            "model": self._model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user},
+            ],
+        }
+        if role in structured_roles:
+            system_prompt = (
+                system + "\n\nRespond with ONLY a single JSON value. "
+                "No prose, no markdown fences, no commentary."
+            )
+            kwargs["messages"][0]["content"] = system_prompt
+            kwargs["response_format"] = {"type": "json_object"}
+        res = self._client.chat.completions.create(**kwargs)
+        raw = res.choices[0].message.content or ""
+        return _extract_json_text(raw) if role in structured_roles else raw
+
+
+def safe_json_loads(raw: str) -> dict:
+    """Tolerant JSON parse: strips code fences / prose, raises ValueError on failure."""
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        cleaned = _extract_json_text(raw or "")
+        if not cleaned:
+            raise ValueError(f"LLM returned no JSON payload (got {raw!r})")
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"LLM returned malformed JSON: {e}. Raw={raw!r}") from e
 
 
 def _extract_json_text(text: str) -> str:
@@ -34,40 +87,3 @@ def _extract_json_text(text: str) -> str:
     # Otherwise pull out the first {...} or [...] block
     m = re.search(r"(\{.*\}|\[.*\])", s, flags=re.DOTALL)
     return m.group(1).strip() if m else s
-
-
-class OllamaProvider(LLMProvider):
-    # TODO
-    pass
-
-
-# class AnthropicProvider(LLMProvider):
-#     def __init__(self, model: str = "claude-haiku-4-5-20251001"):
-#         if not os.environ.get("ANTHROPIC_API_KEY"):
-#             raise RuntimeError("Set ANTHROPIC_API_KEY in your environment.")
-#         self._client = anthropic.Anthropic()
-#         self._model = model
-
-#     def complete(self, system: str, user: str, role: str = "default") -> str:
-#         # Nudge the model toward strict JSON for roles that are parsed downstream.
-#         structured_roles = {
-#             "planner",
-#             "replanner",
-#             "summarizer",
-#             "aggregator",
-#             "critic",
-#         }
-#         sys_prompt = system
-#         if role in structured_roles:
-#             sys_prompt = (
-#                 system + "\n\nRespond with ONLY a single JSON value. No prose, "
-#                 "no markdown fences, no commentary."
-#             )
-#         response = self._client.messages.create(
-#             model=self._model,
-#             max_tokens=1024,
-#             system=sys_prompt,
-#             messages=[{"role": "user", "content": user}],
-#         )
-#         raw = "".join(b.text for b in response.content if b.type == "text")
-#         return _extract_json_text(raw) if role in structured_roles else raw
