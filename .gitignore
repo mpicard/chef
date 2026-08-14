@@ -10,3 +10,6 @@ wheels/
 .venv
 .env*
 sandbox/
+runs/
+.pytest_cache
+.ipynb_checkpoints
