@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from agent import Agent, OnStep
@@ -45,6 +46,8 @@ class RunResult:
     report: str
     status: str
     events: list[dict[str, Any]] = field(default_factory=list)
+    trace_path: str | None = None
+    total_tokens: int = 0
 
 
 def format_step(event: dict[str, Any]) -> str:
@@ -87,6 +90,7 @@ class Orchestrator:
         build_max_steps: int = 20,
         verbose: bool = True,
         on_step: OnStep | None = None,
+        persist_dir: Path | None = None,
     ) -> RunResult:
         events: list[dict[str, Any]] = []
 
@@ -116,6 +120,7 @@ class Orchestrator:
             max_steps=plan_max_steps,
             on_step=make_on_step("plan"),
         )
+        plan_tokens = plan_agent.token_usage
 
         build_agent = Agent(
             self._provider,
@@ -127,14 +132,28 @@ class Orchestrator:
             max_steps=build_max_steps,
             on_step=make_on_step("build"),
         )
+        build_tokens = build_agent.token_usage
 
         status = "ok"
         if plan.startswith("Stopped:") or report.startswith("Stopped:"):
             status = "max_steps"
-        return RunResult(
+
+        total_prompt = plan_tokens[0] + build_tokens[0]
+        total_completion = plan_tokens[1] + build_tokens[1]
+
+        result = RunResult(
             goal=goal,
             plan=plan,
             report=report,
             status=status,
             events=events,
+            total_tokens=total_prompt + total_completion
         )
+        if persist_dir is not None:
+            from trace_store import persist_run
+
+            path = persist_run(result, persist_dir)
+            result.trace_path = str(path)
+            if verbose:
+                print(f"[trace] {path}", flush=True)
+        return result

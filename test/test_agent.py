@@ -212,3 +212,100 @@ def test_agent_rejects_json_array_then_recovers():
     assert events[1]["kind"] == "invalid_json"
     assert "Expected a JSON object" in events[1]["error"]
     assert "JSON object" in provider.calls[1]["messages"][-1]["content"]
+
+
+def test_truncate_for_messages():
+    from agent import _MSG_OBS_LIMIT, truncate_for_messages
+
+    assert truncate_for_messages("short") == "short"
+    big = "x" * (_MSG_OBS_LIMIT + 10)
+    out = truncate_for_messages(big)
+    assert out.endswith("\n...[truncated]")
+    assert len(out) == _MSG_OBS_LIMIT + len("\n...[truncated]")
+
+
+def test_compact_messages_keeps_goal_and_tail():
+    from agent import compact_messages
+
+    msgs = [{"role": "user", "content": "GOAL"}]
+    for i in range(30):
+        msgs.append({"role": "assistant", "content": f"a{i}"})
+        msgs.append({"role": "user", "content": f"u{i}"})
+    out = compact_messages(msgs, keep_last=12)
+    assert out[0]["content"] == "GOAL"
+    assert "omitted" in out[1]["content"]
+    assert out[1]["content"].startswith("[omitted")
+    assert len(out) == 1 + 1 + 12  # goal + stub + last 12
+    assert out[-1]["content"] == "u29"
+    assert out[-2]["content"] == "a29"
+
+
+def test_compact_messages_noop_when_short():
+    from agent import compact_messages
+
+    msgs = [
+        {"role": "user", "content": "GOAL"},
+        {"role": "assistant", "content": "a"},
+        {"role": "user", "content": "b"},
+    ]
+    assert compact_messages(msgs, keep_last=12) == msgs
+
+
+def test_history_assistant_redacts_write_content():
+    from agent import history_assistant_text
+
+    raw = json.dumps(
+        {
+            "tool": "write_file",
+            "args": {"path": "x.py", "content": "y" * 200},
+        }
+    )
+    action = json.loads(raw)
+    stored = history_assistant_text(raw, action)
+    parsed = json.loads(stored)
+    assert parsed["tool"] == "write_file"
+    assert parsed["args"]["path"] == "x.py"
+    assert parsed["args"]["content"].endswith("…")
+    assert len(parsed["args"]["content"]) <= 81
+
+
+def test_agent_message_history_truncates_huge_observation(tmp_path):
+    from agent import _MSG_OBS_LIMIT
+
+    tools = make_tools(root=tmp_path)
+    blob = "Z" * (_MSG_OBS_LIMIT + 500)
+    (tmp_path / "big.txt").write_text(blob, encoding="utf-8")
+    provider = ScriptedProvider(
+        [
+            json.dumps({"tool": "read_file", "args": {"path": "big.txt"}}),
+            json.dumps({"done": True, "summary": "read it"}),
+        ]
+    )
+    agent = Agent(provider, tools=tools)
+    assert agent.run("read big", keep_last=12) == "read it"
+
+    second = provider.calls[1]["messages"]
+    joined = "\n".join(m["content"] for m in second)
+    assert blob not in joined
+    assert "[truncated]" in joined
+    assert joined.count("Z") <= _MSG_OBS_LIMIT
+
+
+def test_agent_compacts_long_history(tmp_path):
+    tools = make_tools(root=tmp_path)
+    (tmp_path / "a.txt").write_text("a", encoding="utf-8")
+    replies = []
+    for i in range(8):
+        replies.append(
+            json.dumps({"tool": "read_file", "args": {"path": "a.txt"}})
+        )
+    replies.append(json.dumps({"done": True, "summary": "done"}))
+    provider = ScriptedProvider(replies)
+    agent = Agent(provider, tools=tools)
+    assert agent.run("loop reads", keep_last=4) == "done"
+
+    last_call_msgs = provider.calls[-1]["messages"]
+    assert last_call_msgs[0]["content"] == "loop reads"
+    # With keep_last=4, after many turns we should see the omit stub
+    assert any("omitted" in m["content"] for m in last_call_msgs)
+    assert len(last_call_msgs) <= 1 + 1 + 4

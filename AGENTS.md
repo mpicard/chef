@@ -30,6 +30,14 @@
 - Do not dump full logs.
 - If the cause is unclear, report the relevant error and stop.
 
+## Python / Pyright
+- Satisfy all pyright errors and warnings. Do not suppress diagnostics without fixing the root cause.
+- Use explicit type annotations on function signatures and class attributes; prefer `typing.Optional`, `typing.Union`, and `collections.abc` over bare-builtins where appropriate.
+- Never use `Any` unless the type is truly unknowable — if used, add a comment explaining why.
+- Avoid bare `except:`, `except Exception:`, and `assert` in production code.
+- When a dependency lacks type stubs, pin a types package or stub it locally rather than using `type: ignore`.
+- Prefer `typing.cast` or runtime type checks over silent casts to untyped interfaces.
+
 ## Output
 - Keep responses concise.
 - For completed tasks: state what changed and validation performed.

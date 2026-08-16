@@ -12,10 +12,10 @@ STRUCTURED_ROLES = frozenset({"agent"})
 class LLMProvider:
     """Shared interface. Subclass to plug in a different backend."""
 
-    def chat(self, system: str, messages: list[dict], role: str = "default") -> str:
+    def chat(self, system: str, messages: list[dict], role: str = "default"):
         raise NotImplementedError
 
-    def complete(self, system: str, user: str, role: str = "default") -> str:
+    def complete(self, system: str, user: str, role: str = "default"):
         return self.chat(
             system, [{"role": "user", "content": user}], role=role
         )
@@ -32,10 +32,10 @@ class OpenAICompatibleProvider(LLMProvider):
         api_key: str = "",
         client: Any | None = None,
     ):
-        self._client = client or OpenAI(base_url=base_url, api_key=api_key)
+        self._client = client or OpenAI(base_url=base_url, api_key=api_key, timeout=120.0)
         self._model = model
 
-    def chat(self, system: str, messages: list[dict], role: str = "default") -> str:
+    def chat(self, system: str, messages: list[dict], role: str = "default"):
         system_prompt = system
         kwargs: dict = {
             "model": self._model,
@@ -50,7 +50,9 @@ class OpenAICompatibleProvider(LLMProvider):
             kwargs["response_format"] = {"type": "json_object"}
         res = self._client.chat.completions.create(**kwargs)
         raw = res.choices[0].message.content or ""
-        return _extract_json_text(raw) if role in STRUCTURED_ROLES else raw
+        usage = res.usage
+        text = _extract_json_text(raw) if role in STRUCTURED_ROLES else raw
+        return text, usage
 
 
 def safe_json_loads(raw: str) -> Any:

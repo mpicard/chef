@@ -1,3 +1,4 @@
+import json
 import time
 from collections.abc import Callable
 from typing import Any
@@ -21,8 +22,10 @@ Never use {"tool": "done", ...} — done is not a tool.
 
 OnStep = Callable[[dict[str, Any]], None]
 
-_OBS_LIMIT = 500
+_LOG_LIMIT = 500
+_MSG_OBS_LIMIT = 8000
 _CONTENT_PREVIEW = 80
+_KEEP_LAST = 12
 
 
 def _truncate_args(args: dict) -> dict:
@@ -32,6 +35,45 @@ def _truncate_args(args: dict) -> dict:
         if isinstance(val, str) and len(val) > _CONTENT_PREVIEW:
             out[key] = val[:_CONTENT_PREVIEW] + "…"
     return out
+
+
+def truncate_for_messages(text: str, limit: int = _MSG_OBS_LIMIT) -> str:
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n...[truncated]"
+
+
+def history_assistant_text(raw: str, action: dict[str, Any] | None) -> str:
+    """Store a redacted assistant turn in history (full tool args already applied)."""
+    if not isinstance(action, dict):
+        return truncate_for_messages(raw, _MSG_OBS_LIMIT)
+    name = action.get("tool")
+    if name in ("write_file", "edit_file"):
+        args = action.get("args") or {}
+        if not isinstance(args, dict):
+            args = {}
+        redacted = {"tool": name, "args": _truncate_args(args)}
+        return json.dumps(redacted, ensure_ascii=False)
+    return truncate_for_messages(raw, _MSG_OBS_LIMIT)
+
+
+def compact_messages(
+    messages: list[dict],
+    *,
+    keep_last: int = _KEEP_LAST,
+) -> list[dict]:
+    """Keep the goal plus the last ``keep_last`` turns; drop the middle."""
+    if len(messages) <= 1 + keep_last:
+        return list(messages)
+    goal = messages[0]
+    rest = messages[1:]
+    omitted = len(rest) - keep_last
+    kept = rest[-keep_last:]
+    stub = {
+        "role": "user",
+        "content": f"[omitted {omitted} earlier messages to save context]",
+    }
+    return [goal, stub, *kept]
 
 
 def _ms_since(t0: float) -> int:
@@ -68,33 +110,42 @@ class Agent:
         self._provider = provider
         self._tools = tools if tools is not None else TOOLS
         self._system_prompt = system_prompt
+        self._prompt_tokens = 0
+        self._completion_token = 0
 
     def run(
         self,
         goal: str,
         max_steps: int = 20,
         on_step: OnStep | None = None,
+        *,
+        keep_last: int = _KEEP_LAST,
     ) -> str:
         messages: list[dict] = [{"role": "user", "content": goal}]
         for step in range(max_steps):
             t_llm = time.monotonic()
-            raw = self._provider.chat(
-                system=self._system_prompt, messages=messages, role="agent"
+            raw, usage = self._provider.chat(
+                system=self._system_prompt,
+                messages=compact_messages(messages, keep_last=keep_last),
+                role="agent",
             )
+            if usage:
+                self._prompt_tokens += usage.prompt_tokens or 0
+                self._completion_token += usage.completion_tokens or 0
             llm_ms = _ms_since(t_llm)
             if on_step:
                 on_step(
                     {
                         "kind": "llm",
-                        "raw": raw[:_OBS_LIMIT],
+                        "raw": raw[:_LOG_LIMIT],
                         "step": step,
                         "latency_ms": llm_ms,
                     }
                 )
-            messages.append({"role": "assistant", "content": raw})
             try:
                 action = safe_json_loads(raw)
             except ValueError as e:
+                messages.append({"role": "assistant", "content": raw[:_MSG_OBS_LIMIT]})
                 if on_step:
                     on_step(
                         {
@@ -116,6 +167,7 @@ class Agent:
                     f"Expected a JSON object, got {type(action).__name__}: "
                     f"{raw[:200]!r}"
                 )
+                messages.append({"role": "assistant", "content": raw[:_MSG_OBS_LIMIT]})
                 if on_step:
                     on_step(
                         {
@@ -133,6 +185,12 @@ class Agent:
                 )
                 continue
             if (summary := done_summary(action)) is not None:
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": history_assistant_text(raw, action),
+                    }
+                )
                 if on_step:
                     on_step(
                         {
@@ -162,10 +220,22 @@ class Agent:
                         "kind": "tool",
                         "tool": name,
                         "args": _truncate_args(args),
-                        "observation": obs[:_OBS_LIMIT],
+                        "observation": obs[:_LOG_LIMIT],
                         "step": step,
                         "latency_ms": tool_ms,
                     }
                 )
-            messages.append({"role": "user", "content": f"Observation:\n{obs}"})
+            messages.append(
+                {"role": "assistant", "content": history_assistant_text(raw, action)}
+            )
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"Observation:\n{truncate_for_messages(obs)}",
+                }
+            )
         return "Stopped: max_steps reached"
+
+    @property
+    def token_usage(self) -> tuple[int, int]:
+        return self._prompt_tokens, self._completion_token

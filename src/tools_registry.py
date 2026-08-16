@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from typed_tool import TypedTool
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-MAX_READ = 100_000
+MAX_READ = 20_000
 MAX_LIST = 200
 
 PLAN_TOOLS = frozenset({"read_file", "list_dir", "glob"})
@@ -58,7 +58,7 @@ def read_file(path: str, root: Path | None = None) -> str:
 def write_file(path: str, content: str, root: Path | None = None) -> str:
     p = resolve_repo_path(path, root=root)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content, encoding="utf-8")
+    _ = p.write_text(content, encoding="utf-8")
     return f"Wrote {len(content)} chars to {path}"
 
 
@@ -79,8 +79,8 @@ def list_dir(path: str = ".", root: Path | None = None) -> str:
 
 def glob_files(pattern: str, root: Path | None = None) -> str:
     base = (root or REPO_ROOT).resolve()
-    if pattern.startswith("/") or pattern.startswith(".."):
-        # still allow patterns like 'src/../src/*.py' via resolve checks below
+    if pattern.startswith(("/", "..")):
+        # still allow patterns like 'src/../src/*.py'
         pass
     matches: list[str] = []
     for hit in sorted(base.glob(pattern)):
@@ -105,10 +105,8 @@ def edit_file(
     if count == 0:
         raise ValueError(f"old_string not found in {path!r}")
     if count > 1:
-        raise ValueError(
-            f"old_string found {count} times in {path!r}; must be unique"
-        )
-    p.write_text(text.replace(old_string, new_string, 1), encoding="utf-8")
+        raise ValueError(f"old_string found {count} times in {path!r}; must be unique")
+    _ = p.write_text(text.replace(old_string, new_string, 1), encoding="utf-8")
     return f"Edited {path} ({len(old_string)} → {len(new_string)} chars)"
 
 

@@ -20,10 +20,28 @@ uv run chef "Create sandbox/hello.py that prints Hello, chef"
 uv run python main.py "your goal" --plan-steps 8 --quiet
 ```
 
-Flags: `--plan-steps N`, `--build-steps N`, `-q` / `--quiet`.
+Flags: `--plan-steps N`, `--build-steps N`, `-q` / `--quiet`, `--no-persist`, `--runs-dir PATH`.
+
+Traces are written by default to `runs/<timestamp>.jsonl` (gitignored).
 
 ## Test
 
 ```bash
 python -m pytest test/ -v
 ```
+
+## Eval
+
+Run all cases:
+
+```bash
+python evals/runner.py
+```
+
+Run specific cases:
+
+```bash
+python evals/runner.py --case 01 02
+```
+
+Flags: `--case IDs`, `-q` / `--quiet`, `--verbose`, `--model NAME`, `--base-url URL`.
